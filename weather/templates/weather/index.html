@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прогноз погоды</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?AIzaSyBsV2rF7qptWpSn43QhumABhuhRsmkoiwc&callback=initMap" async defer></script>
+    <style>
+        body {
+            background-image: url('https://img01.rl0.ru/afisha/e1200x800i/daily.afisha.ru/uploads/images/2/c1/2c1d46e2926555ffb7e876008a27291e.jpg');/* Замените на URL вашего изображения с облаками */
+            background-size: cover;
+            background-position: center;
+            color: rgb(11, 11, 11);
+            
+            font-family: Arial, sans-serif;
+        }
+       
+        .container {
+            background-color: rgb(127, 170, 203);
+            opacity: 0.8;
+            padding: 2rem;
+            border-radius: 10px;
+            margin-top: 50px;
+            box-shadow: 10px 5px 5px rgba(35, 35, 35, 0.432);
+        }
+        h1, h2, h3 {
+            text-align: center;
+        }
+        .form-control {
+            margin-bottom: 15px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 14px;
+        }
+        .weather-icon {
+            display: block;
+            margin: 0 auto;
+            width: 100px;
+        }
+        #map {
+            height: 400px; /* Высота карты */
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    
+    <header>
+        <div class="container">
+            <img src="https://i.pinimg.com/originals/50/0a/a9/500aa9360f5573bf4c282bb6ed73cd92.png" alt="Логотип" class="logo" style="display: block; margin: 0 auto; width: 100px;">
+            <h1>Узнай погоду в своем городе</h1>
+            <p class="lead">Узнайте погоду в вашем городе!</p>
+            <p class="subtitle">Получите актуальную информацию о погоде прямо сейчас!</p>
+        </div>
+    </header>
+    
+    <div class="container">
+        <form id="weatherForm" method="POST">
+            {% csrf_token %}
+            <div class="form-group">
+                <input type="text" name="city" class="form-control" placeholder="Введите город" required>
+            </div>
+            <div class="form-group">
+                <select name="unit" class="form-control">
+                    <option value="celsius">Цельсий</option>
+                    <option value="fahrenheit">Фаренгейт</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Получить погоду</button>
+        </form>
+        
+        <div id="weatherResults" class="mt-4"></div>
+        <h2>История запросов</h2>
+        <ul>
+            {% for city in cities %}
+                <li>{{ city.name }}</li>
+            {% endfor %}
+        </ul>
+        <canvas id="weatherChart" class="mt-4" width="400" height="200"></canvas>
+        <div id="map"></div>  <!-- Добавление div для карты -->
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2023 Прогноз погоды. Все права защищены.</p>
+        </div>
+    </footer>
+
+    <script>
+        let chart;
+        let map;
+
+        function initMap() {
+            // Инициализация карты с центром по умолчанию
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 8,
+                center: {lat: 0, lng: 0} // Центр карты устанавливается по умолчанию
+            });
+        }
+
+        $('#weatherForm').on('submit', function(event) {
+            event.preventDefault();
+            $.ajax({
+                type: 'POST',
+                url: '',
+                data: $(this).serialize(),
+                success: function(data) {
+                    const weatherResultsHtml = `
+                        <h3>Погода в ${data.city}</h3>
+                        <img src="${data.weather_image_url}" alt="Погода" class="weather-icon">
+                        <p>Температура: ${data.temperature}°</p>
+                        <p>Облачность: ${data.weather}</p>
+                        <p>Влажность: ${data.humidity}%</p>
+                        <p>Давление: ${data.pressure} hPa</p>
+                        <p>Скорость ветра: ${data.wind_speed} м/с</p>
+                    `;
+
+                    $('#weatherResults').html(weatherResultsHtml);
+
+                    // Обновление карты при успешном запросе
+                    const geocoder = new google.maps.Geocoder();
+                    geocoder.geocode({ 'address': data.city }, function(results, status) {
+                        if (status === 'OK') {
+                            map.setCenter(results[0].geometry.location);
+                            new google.maps.Marker({
+                                map: map,
+                                position: results[0].geometry.location
+                            });
+                        } else {
+                            alert('Геокодирование не было выполнено: ' + status);
+                        }
+                    });
+
+                    const labels = data.forecast.map(item => item.date);
+                    const temperatures = data.forecast.map(item => item.temperature);
+
+                    if (chart) {
+                        chart.destroy();
+                    }
+
+                    const ctx = document.getElementById('weatherChart').getContext('2d');
+                    chart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Температура',
+                                data: temperatures,
+                                borderColor: 'rgba(255, 0, 0, 1)',
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true
+                                }
+                            }
+                        }
+                    });
+                },
+                error: function(xhr) {
+                    $('#weatherResults').html('<p class="text-danger">Город не найден!</p>');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
